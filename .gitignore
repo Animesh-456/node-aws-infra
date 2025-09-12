@@ -1,0 +1,11 @@
+.env
+node_modules
+build
+package-lock.json
+.terraform
+
+
+# Ignore Terraform local files and state
+.terraform/
+*.tfstate
+*.tfstate.*
