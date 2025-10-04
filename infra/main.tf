@@ -1,16 +1,10 @@
 terraform {
   backend "s3" {
-    bucket = "my-nodejs-app-tf-state-12345" 
-    
-    # Path inside the bucket where the state file will be stored
-    key = "environments/nodejs-app-prod.tfstate" 
-
-    region = "ap-south-1" 
-
-    dynamodb_table = "terraform-state-locks" 
-    
-    # Encryption is highly recommended
-    encrypt = true 
+    bucket         = "my-nodejs-app-tf-state-12345"
+    key            = "environments/nodejs-app-prod.tfstate"
+    region         = "ap-south-1"
+    dynamodb_table = "terraform-state-locks"  # Correct option for state locking
+    encrypt        = true
   }
 }
 
