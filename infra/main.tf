@@ -1,3 +1,19 @@
+terraform {
+  backend "s3" {
+    bucket = "my-nodejs-app-tf-state-12345" 
+    
+    # Path inside the bucket where the state file will be stored
+    key = "environments/nodejs-app-prod.tfstate" 
+
+    region = "ap-south-1" 
+
+    dynamodb_table = "terraform-state-locks" 
+    
+    # Encryption is highly recommended
+    encrypt = true 
+  }
+}
+
 provider "aws" {
   region = "ap-south-1"
 }
@@ -13,12 +29,53 @@ data "aws_subnets" "available" {
     name   = "vpc-id"
     values = [data.aws_vpc.default.id]
   }
-
-  # filter {
-  #   name   = "availability-zone"
-  #   values = ["ap-south-1a", "ap-south-1b"]
-  # }
 }
+
+# IAM Role for EC2
+resource "aws_iam_role" "ec2_role" {
+  name = "ec2-ssm-role"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17",
+    Statement = [{
+      Action = "sts:AssumeRole",
+      Effect = "Allow",
+      Principal = {
+        Service = "ec2.amazonaws.com"
+      }
+    }]
+  })
+}
+
+# IAM Policy for SSM Access
+resource "aws_iam_role_policy" "ssm_policy" {
+  name = "ssm-policy"
+  role = aws_iam_role.ec2_role.id
+
+  policy = jsonencode({
+    Version = "2012-10-17",
+    Statement = [
+      {
+        Effect   = "Allow",
+        Action   = [
+          "ssm:GetParameter",
+          "ssm:GetParameters",
+          "ssm:GetParametersByPath"
+        ],
+        Resource = "*"
+      }
+    ]
+  })
+}
+
+
+# IAM Instance Profile (to attach to EC2/ASG)
+resource "aws_iam_instance_profile" "ec2_profile" {
+  name = "ec2-ssm-profile"
+  role = aws_iam_role.ec2_role.name
+}
+
+
 
 # Latest Ubuntu 24.04 AMI
 data "aws_ami" "ubuntu" {
@@ -46,8 +103,8 @@ resource "aws_security_group" "ec2_sg" {
 
   ingress {
     description = "HTTP"
-    from_port   = 80
-    to_port     = 80
+    from_port   = 4000
+    to_port     = 4000
     protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
   }
@@ -86,65 +143,70 @@ resource "aws_security_group" "alb_sg" {
 resource "aws_launch_template" "nodejs_lt" {
   name_prefix   = "nodejs-template-"
   image_id      = data.aws_ami.ubuntu.id
-  instance_type = "t2.medium"
+  instance_type = "t3.medium"
   key_name      = "Thanos"
 
   vpc_security_group_ids = [aws_security_group.ec2_sg.id]
 
+  iam_instance_profile {
+    name = aws_iam_instance_profile.ec2_profile.name
+  }
+
+
   user_data = base64encode(<<-EOT
               #!/bin/bash
+              # Run everything as ubuntu
+              sudo -i -u ubuntu bash << 'EOF'
+
               # Update system
-              apt update -y
-              apt upgrade -y
-              apt install -y curl git build-essential
-              apt install -y awscli
+              sudo apt update -y
+              sudo apt upgrade -y
+              sudo apt install -y curl git build-essential unzip
+              curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+              unzip awscliv2.zip
+              sudo ./aws/install
 
-
-              # Fetch secrets from SSM
-              MONGO_URI=$(aws ssm get-parameter --name "/nodeapp/mongodb_uri" --with-decryption --query "Parameter.Value" --output text --region ap-south-1)
-              JWT_SECRET=$(aws ssm get-parameter --name "/nodeapp/jwt_secret" --with-decryption --query "Parameter.Value" --output text --region ap-south-1)
-              FRONTEND_LINK=$(aws ssm get-parameter --name "/nodeapp/frontend_link" --query "Parameter.Value" --output text --region ap-south-1)
-              PORT=$(aws ssm get-parameter --name "/nodeapp/port" --query "Parameter.Value" --output text --region ap-south-1)
-
-              # Install NVM
+              # Install NVM for ubuntu
               export NVM_DIR="/home/ubuntu/.nvm"
               git clone https://github.com/nvm-sh/nvm.git $NVM_DIR
               cd $NVM_DIR
               git checkout v0.39.8
               . $NVM_DIR/nvm.sh
 
-              # Install Node.js 18 using NVM
-              nvm install 18
-              nvm use 18
-              nvm alias default 18
+              # Make NVM available in future shells
+              echo 'export NVM_DIR="$HOME/.nvm"' >> /home/ubuntu/.bashrc
+              echo '[ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"' >> /home/ubuntu/.bashrc
 
-              # Install PM2 globally
+              # Install Node.js 18 and PM2
+              nvm install 18
+              nvm alias default 18
               npm install -g pm2
 
-              # Pull your Node.js app
+
+              # Clone your app
               cd /home/ubuntu
-              git clone https://github.com/your-repo/app.git
-              cd app
+              git clone https://github.com/Animesh-456/node-aws-infra.git
+              cd node-aws-infra
               npm install
 
-
-              cat <<EOF > /home/ubuntu/app/.env
-              connect=$MONGO_URI
-              SECRET=$JWT_SECRET
-              frontendLink=$FRONTEND_LINK
-              port=$PORT
-              EOF
+              # Create .env file
+              cat <<EENV > /home/ubuntu/node-aws-infra/.env
+              connect=$(aws ssm get-parameter --name "/myapp/connect" --with-decryption --query "Parameter.Value" --output text --region ap-south-1)
+              SECRET=$(aws ssm get-parameter --name "/myapp/SECRET" --with-decryption --query "Parameter.Value" --output text --region ap-south-1)
+              frontendLink=$(aws ssm get-parameter --name "/myapp/frontendLink" --query "Parameter.Value" --output text --region ap-south-1)
+              port=$(aws ssm get-parameter --name "/myapp/port" --query "Parameter.Value" --output text --region ap-south-1)
+              EENV
 
 
               # Start app with PM2
               pm2 start index.js --name "backend"
-              pm2 startup systemd
+              pm2 startup systemd -u ubuntu --hp /home/ubuntu
               pm2 save
 
-              # Ensure permissions
-              chown -R ubuntu:ubuntu /home/ubuntu
+              EOF
               EOT
-  )
+)
+
   tag_specifications {
     resource_type = "instance"
     tags = {

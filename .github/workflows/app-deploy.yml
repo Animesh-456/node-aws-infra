@@ -1,0 +1,65 @@
+# name: 🚀 Application Deployment (ASG Refresh)
+
+# on:
+#   push:
+#     branches:
+#       - master
+#     paths:
+#       - '**'              # Match all files in all directories
+#       - '!infra/**'       # Exclude everything in infra directory
+#       - '!**.tf'          # Exclude all .tf files
+#       - '!*.tf'           # Exclude .tf files in root directory
+
+# env:
+#   AWS_REGION: ap-south-1
+#   # The physical name of your ASG. It's safer to query this than hardcode it.
+#   ASG_TAG_NAME: nodejs-asg-instance 
+  
+# jobs:
+#   deploy-app:
+#     name: 'Deploy Node.js Application'
+#     runs-on: ubuntu-latest
+#     environment: Production
+    
+#     steps:
+#       - name: Checkout repository
+#         uses: actions/checkout@v4
+
+#       - name: Configure AWS Credentials
+#         # Assumes IAM user/role has autoscaling:StartInstanceRefresh permission
+#         uses: aws-actions/configure-aws-credentials@v4
+#         with:
+#           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+#           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+#           aws-region: ${{ secrets.AWS_REGION }}
+
+#       # 1. Get the physical name of the ASG using its Terraform-defined tag
+#       - name: Get physical ASG Name
+#         id: get_asg_name
+#         run: |
+#           # Query AWS using the tag set in your Terraform ASG resource: Name = "nodejs-asg-instance"
+#           ASG_PHYSICAL_NAME=$(aws autoscaling describe-auto-scaling-groups \
+#             --query "AutoScalingGroups[?Tags[?Key=='Name' && Value=='${{ env.ASG_TAG_NAME }}']].AutoScalingGroupName | [0]" \
+#             --output text)
+          
+#           if [ "$ASG_PHYSICAL_NAME" == "None" ] || [ -z "$ASG_PHYSICAL_NAME" ]; then
+#             echo "Error: ASG with tag Name=${{ env.ASG_TAG_NAME }} not found. Deployment aborted."
+#             exit 1
+#           fi
+#           # Export the physical name for use in the next step
+#           echo "ASG_PHYSICAL_NAME=$ASG_PHYSICAL_NAME" >> $GITHUB_ENV
+
+#       # 2. Trigger Auto Scaling Group Instance Refresh
+#       - name: Trigger Auto Scaling Group Instance Refresh
+#         run: |
+#           echo "Starting Instance Refresh for application deployment on ${{ env.ASG_PHYSICAL_NAME }}"
+          
+#           # This command starts the rolling update, forcing new instances to launch.
+#           # The new instances will run the Launch Template's User Data (git pull latest code).
+#           aws autoscaling start-instance-refresh \
+#             --auto-scaling-group-name "${{ env.ASG_PHYSICAL_NAME }}" \
+#             --strategy Rolling \
+#             --preferences '{"MinHealthyPercentage": 50, "AutoRollback": true}' \
+#             --region "${{ secrets.AWS_REGION }}"
+            
+#           echo "Instance Refresh successfully started. Monitor ASG activities for progress."
