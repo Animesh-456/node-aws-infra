@@ -54,12 +54,11 @@ jobs:
         run: |
           echo "Starting Instance Refresh for application deployment on ${{ env.ASG_PHYSICAL_NAME }}"
           
-          # This command starts the rolling update, forcing new instances to launch.
-          # The new instances will run the Launch Template's User Data (git pull latest code).
+          # Remove AutoRollback from preferences since it's not compatible with this configuration
           aws autoscaling start-instance-refresh \
             --auto-scaling-group-name "${{ env.ASG_PHYSICAL_NAME }}" \
             --strategy Rolling \
-            --preferences '{"MinHealthyPercentage": 50, "AutoRollback": true}' \
+            --preferences '{"MinHealthyPercentage": 50}' \
             --region "${{ secrets.AWS_REGION }}"
             
           echo "Instance Refresh successfully started. Monitor ASG activities for progress."
