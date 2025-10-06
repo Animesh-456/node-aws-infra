@@ -2,7 +2,7 @@ name: ⚙️ Infrastructure CI/CD (Terraform)
 
 on:
   push:
-    branches:
+    branches:               # Trigger only on pushes to master
       - master
     paths:
       - 'infra/**'           # Triggers on any changes in infra directory
