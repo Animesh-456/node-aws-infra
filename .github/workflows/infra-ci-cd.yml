@@ -41,6 +41,6 @@ jobs:
         working-directory: ./infra
         run: terraform plan -out=tfplan
         
-      - name: Terraform Destyroy
+      - name: Terraform Apply
         working-directory: ./infra
-        run: terraform destroy -auto-approve
+        run: terraform apply -auto-approve
