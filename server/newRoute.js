@@ -13,7 +13,7 @@ router.use(bodyParser.json());
 
 // Status check route
 router.get('/status', (req, res) => {
-    res.status(200).json({ status: 'API is running smooth' });
+    res.status(200).json({ status: 'API is running smoothly' });
 });
 
 // Task list route

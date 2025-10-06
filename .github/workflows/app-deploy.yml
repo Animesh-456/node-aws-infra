@@ -4,11 +4,11 @@ on:
   push:
     branches:
       - master
-    paths:
-      - '!infra/**'       # Exclude everything in infra directory
-      - '!**.tf'          # Exclude all .tf files
-      - '!*.tf'           # Exclude .tf files in root directory
-      - '**'              # Match all files in all directories
+    paths-ignore:
+      - 'infra/**'
+      - '**.tf'
+      - '*.tf'
+      - '.github/workflows/infra-ci-cd.yml'
 
 env:
   AWS_REGION: ap-south-1
