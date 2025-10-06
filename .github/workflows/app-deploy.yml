@@ -5,10 +5,10 @@ on:
     branches:
       - master
     paths:
-      - '**'              # Match all files in all directories
       - '!infra/**'       # Exclude everything in infra directory
       - '!**.tf'          # Exclude all .tf files
       - '!*.tf'           # Exclude .tf files in root directory
+      - '**'              # Match all files in all directories
 
 env:
   AWS_REGION: ap-south-1
